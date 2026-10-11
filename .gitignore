@@ -1,0 +1,9 @@
+# OS & temp files
+.DS_Store
+desktop.ini
+*.profraw
+*.zip
+*.log
+
+# Media / reference screenshots
+Screenshot*.png
