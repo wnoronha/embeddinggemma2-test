@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Decisions API — Autonomous Lane Choice Demo</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -28,11 +29,13 @@
       <!-- Section Title & Tabs -->
       <div class="showcase-header">
         <div class="tab-group">
-          <button class="tab-btn active">Driving</button>
+          <button class="tab-btn active" id="tabDriving">Driving</button>
+          <button class="tab-btn" id="tabPlayground">Playground</button>
         </div>
         <button id="pauseBtn" class="link-btn">Pause animation</button>
       </div>
 
+      <section id="drivingView">
       <h2 class="question-headline">Which lane should the car choose?</h2>
 
       <!-- Visual Stage: Road on Left, Decision readout on Right -->
@@ -118,10 +121,37 @@
         Until the model loads the car holds its lane and shows
         <code>Waiting for model…</code>.
       </p>
+      </section>
+
+      <section id="playgroundView" hidden>
+        <h2 class="question-headline">Test any query against the model</h2>
+        <p class="playground-sub">Same engine as Driving — query + instructions + choices, winning label back. No probabilities, no fallback steering.</p>
+        <div class="playground-form">
+          <label class="field-label" for="pgQuery">Query</label>
+          <textarea id="pgQuery" class="field-input" rows="2">Completely clear with unobstructed open road</textarea>
+
+          <label class="field-label" for="pgInstructions">Instructions</label>
+          <textarea id="pgInstructions" class="field-input" rows="2">Identify the safest lane that is clear of roadblocks.</textarea>
+
+          <label class="field-label" for="pgChoices">Choices (one per line: <code>label | description</code>)</label>
+          <textarea id="pgChoices" class="field-input mono" rows="5">lane_1 | Lane 1 is blocked by a dangerous roadblock barrier
+lane_2 | Lane 2 is completely clear with unobstructed open road
+lane_3 | Lane 3 is completely clear with unobstructed open road</textarea>
+
+          <div class="playground-actions">
+            <button class="action-btn pg-submit" id="pgSubmit">Submit</button>
+            <span class="pg-status" id="pgStatus"></span>
+          </div>
+
+          <label class="field-label">Response</label>
+          <pre class="code-content pg-response" id="pgResponse">Hit Submit to run the model.</pre>
+        </div>
+      </section>
     </main>
   </div>
 
   <script type="module" src="decision-engine.js"></script>
   <script src="game.js"></script>
+  <script src="playground.js"></script>
 </body>
 </html>

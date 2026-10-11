@@ -394,3 +394,89 @@ body {
   padding: 1px 5px;
   border-radius: 4px;
 }
+
+/* Playground tab */
+.playground-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+#playgroundView {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#playgroundView[hidden] {
+  display: none;
+}
+
+.playground-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #090b0f;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #191d26;
+}
+
+.field-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.field-label code {
+  text-transform: none;
+}
+
+.field-input {
+  background: #14171f;
+  color: var(--text-main);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.field-input.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.playground-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pg-submit {
+  flex: 0 0 160px;
+}
+
+.pg-submit:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.pg-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.pg-response {
+  background: #090a0d;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-height: 80px;
+}

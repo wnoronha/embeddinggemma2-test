@@ -184,35 +184,60 @@ export async function initDecisionEngine() {
   }
 }
 
-// Core Decision API: query + choice descriptions -> winning lane number.
-// Returns { chosen, similarities, latencyMs, engine }.
-// `chosen` ALWAYS comes from the model (selectedKey / argmax of cosine sims).
+// Core Decision API: query + choice descriptions -> winning label.
+// Returns { selected, similarities, latencyMs, engine }.
+// `selected` ALWAYS comes from the model (selectedKey / argmax of cosine sims).
 // No probabilities, no confidence scores, nothing hardcoded.
-export async function evaluateLaneChoice(payload) {
+// Powers both the driving demo (via evaluateLaneChoice) and the Playground tab.
+export async function evaluateChoiceText(query, instructions, options) {
+  if (!query || !options || options.length === 0) {
+    throw new Error("query and at least one option required");
+  }
   if (engine.status === "ready-decision" && engine._decisionMaker) {
-    const question = payloadToChoiceQuestion(payload);
+    const question = { instructions, options, normalizePrior: true };
     const t0 = performance.now();
-    const result = await engine._decisionMaker.evaluateChoice(payload.query, question);
+    const result = await engine._decisionMaker.evaluateChoice(query, question);
     const latencyMs = Math.round(performance.now() - t0);
-    const chosen = parseLaneKey(result.selectedKey) ?? 2;
-    console.info(`[decision-engine/engine=decisionmaker] chosen=${chosen} selectedKey=${result.selectedKey} ${latencyMs}ms`);
-    return { chosen, similarities: null, latencyMs, engine: engine.engineName, raw: result };
+    console.info(`[decision-engine/engine=decisionmaker] selected=${result.selectedKey} ${latencyMs}ms`);
+    return { selected: result.selectedKey, similarities: null, latencyMs, engine: engine.engineName, raw: result };
   }
   if (engine.status === "ready-embed" && engine._embedder) {
     const t0 = performance.now();
-    const q = payload?.questions?.[0];
-    const queryEmb = engine._embedder.embed(payload.query, { type: "SEMANTIC_SIMILARITY" }).embeddings[0];
+    const queryEmb = engine._embedder.embed(query, { type: "SEMANTIC_SIMILARITY" }).embeddings[0];
     const sims = [];
-    for (const c of q.choices) {
+    for (const c of options) {
       const cEmb = engine._embedder.embed(c.description, { type: "SEMANTIC_SIMILARITY" }).embeddings[0];
       sims.push(engine._TextEmbedderNS.TextEmbedder.cosineSimilarity(queryEmb, cEmb));
     }
     const latencyMs = Math.round(performance.now() - t0);
-    const chosen = argmaxLaneOf(sims);
-    console.info(`[decision-engine/engine=textembedder] sims=${sims.map((s) => s.toFixed(3))} chosen=${chosen} ${latencyMs}ms`);
-    return { chosen, similarities: { 1: sims[0], 2: sims[1], 3: sims[2] }, latencyMs, engine: engine.engineName };
+    const best = argmaxLaneOf(sims) - 1;
+    console.info(`[decision-engine/engine=textembedder] sims=${sims.map((s) => s.toFixed(3))} selected=${options[best].label} ${latencyMs}ms`);
+    const similarities = {};
+    options.forEach((o, i) => { similarities[o.label] = sims[i]; });
+    return { selected: options[best].label, similarities, latencyMs, engine: engine.engineName };
   }
   throw new Error(`model not ready (status=${engine.status})`);
+}
+
+// Lane-specific wrapper: same code path, then parse lane number.
+export async function evaluateLaneChoice(payload) {
+  const q = payload?.questions?.[0];
+  const options = (q?.choices || []).map((c) => ({ label: c.value, description: c.description }));
+  const res = await evaluateChoiceText(
+    payload.query,
+    q?.instructions || "Identify the safest lane that is clear of roadblocks.",
+    options
+  );
+  // Re-key similarities by lane number for the driving UI.
+  let similarities = null;
+  if (res.similarities) {
+    similarities = {};
+    for (const [label, s] of Object.entries(res.similarities)) {
+      const lane = parseLaneKey(label);
+      if (lane) similarities[lane] = s;
+    }
+  }
+  return { ...res, similarities, chosen: parseLaneKey(res.selected) ?? 2 };
 }
 
 // Legacy global for game.js (classic script). Module sets window.DecisionEngine.
@@ -220,6 +245,7 @@ if (typeof window !== "undefined") {
   window.DecisionEngine = {
     initDecisionEngine,
     evaluateLaneChoice,
+    evaluateChoiceText,
     isModelReady,
     getEngineStatus,
     payloadToChoiceQuestion,
