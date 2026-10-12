@@ -10,6 +10,9 @@
   // with HTTP 400 and no ACAO header, so browsers refuse direct fetch().
   // Served pages must use the proxy; static hosts without it fall back direct.
   var JEV_PROXY = "/api/jev";
+  // Public proxy (Cloudflare Worker, see jev-proxy-worker.js) for static hosts
+  // like GitHub Pages where /api/jev does not exist. Empty = disabled.
+  var JEV_PUBLIC_PROXY = "";
   var OPENAI_DEFAULT_BASE = "https://api.openai.com/v1";
 
   function parseLaneKey(key) {
@@ -85,22 +88,32 @@
   }
 
   async function jevFetch(url, opts) {
-    // Prefer the same-origin proxy; fall back to direct only when the page is
-    // hosted somewhere without the proxy (static hosts answer 404 + HTML).
-    if (url === JEV_PROXY) {
-      let r;
-      try {
-        r = await fetch(url, opts);
-      } catch (e) {
-        throw new Error("jev proxy unreachable (is server.py running?): " + (e && e.message || e));
-      }
-      const ct = (r.headers.get("content-type") || "").toLowerCase();
-      if (r.status === 404 && ct.indexOf("text/html") !== -1) {
-        return fetch(JEV_ENDPOINT, opts); // static host: try direct (likely CORS-blocked)
-      }
-      return r;
+    // Explicit override (tests, custom setups): use as-is.
+    if (url && url !== JEV_PROXY) return fetch(url, opts);
+    // Chain: same-origin proxy (server.py) -> public worker (Cloudflare) ->
+    // direct (usually CORS-blocked, last resort). Static hosts answer /api/jev
+    // with 404 + HTML, which is the signal to move down the chain.
+    var problems = [];
+    try {
+      var r = await fetch(JEV_PROXY, opts);
+      var ct = (r.headers.get("content-type") || "").toLowerCase();
+      if (!(r.status === 404 && ct.indexOf("text/html") !== -1)) return r;
+      problems.push("same-origin /api/jev missing (static host?)");
+    } catch (e) {
+      problems.push("same-origin /api/jev unreachable: " + (e && e.message || e));
     }
-    return fetch(url, opts);
+    if (JEV_PUBLIC_PROXY) {
+      try {
+        return await fetch(JEV_PUBLIC_PROXY, opts);
+      } catch (e) {
+        problems.push("public proxy failed: " + (e && e.message || e));
+      }
+    }
+    try {
+      return await fetch(JEV_ENDPOINT, opts);
+    } catch (e) {
+      throw new Error("jev unreachable [" + problems.concat(["direct: " + (e && e.message || e)]).join("; ") + "]");
+    }
   }
 
   // --- Jev (TypeSafe SystemOne, native Choice) ---
@@ -306,6 +319,7 @@
   window.RaceProviders = {
     JEV_ENDPOINT: JEV_ENDPOINT,
     JEV_PROXY: JEV_PROXY,
+    JEV_PUBLIC_PROXY: JEV_PUBLIC_PROXY,
     OPENAI_DEFAULT_BASE: OPENAI_DEFAULT_BASE,
     INSTRUCTIONS: INSTRUCTIONS,
     parseLaneKey: parseLaneKey,
