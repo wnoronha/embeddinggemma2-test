@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Decisions API — Autonomous Lane Choice Demo</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <div class="page-wrapper">
@@ -36,15 +36,15 @@
       </div>
 
       <section id="drivingView">
-      <h2 class="question-headline">System-One Racer — same road, four brains</h2>
-      <p class="playground-sub">One canonical obstacle set mirrored to all tracks. One shared state, fanned out in parallel via <code>Promise.allSettled</code> to Jev + OpenAI Decisions + Jev-via-OpenRouter + local EmbeddingGemma. Keys stay in your browser (localStorage).</p>
+      <h2 class="question-headline">System-One Racer — same road, three brains</h2>
+      <p class="playground-sub">One canonical obstacle set mirrored to all tracks. One shared state, fanned out in parallel via <code>Promise.allSettled</code> to Jev (OpenRouter or native) + OpenAI Decisions + local EmbeddingGemma. Keys stay in your browser (localStorage).</p>
 
       <!-- Leaderboard -->
       <div class="leaderboard" id="leaderboard"></div>
 
       <!-- Global race controls -->
       <div class="control-box race-controls">
-        <div class="control-title">Race control (mirrored to all 4 tracks):</div>
+        <div class="control-title">Race control (mirrored to all 3 tracks):</div>
         <div class="button-row">
           <button class="action-btn" id="blockBtn1" onclick="raceSpawn(1)">Block Lane 1</button>
           <button class="action-btn" id="blockBtn2" onclick="raceSpawn(2)">Block Lane 2</button>
@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <!-- Four tracks, each with its own 3 lanes -->
+      <!-- Three tracks, each with its own 3 lanes -->
       <div class="race-grid">
         <div class="track-card" data-provider="local">
           <div class="track-header"><span class="track-name">Local · EmbeddingGemma</span><span class="track-sub">on-device · no key</span></div>
@@ -74,11 +74,15 @@
         </div>
 
         <div class="track-card" data-provider="jev">
-          <div class="track-header"><span class="track-name">Jev · SystemOne</span><span class="track-sub">api.typesafe.ai</span></div>
+          <div class="track-header"><span class="track-name">Jev · SystemOne</span><span class="track-sub">via OpenRouter · CORS-clean</span></div>
           <div class="road-viewport small"><canvas id="canvas-jev" width="220" height="380"></canvas></div>
           <div class="key-row">
-            <input type="password" id="key-jev" class="field-input" placeholder="TypeSafe API key (stored locally)" autocomplete="off" />
-            <input type="text" id="model-jev" class="field-input" value="jev-latest" spellcheck="false" />
+            <select id="src-jev" class="field-input">
+              <option value="openrouter" selected>Jev via OpenRouter (no proxy needed)</option>
+              <option value="native">Jev native (TypeSafe API via proxy)</option>
+            </select>
+            <input type="password" id="key-jev" class="field-input" placeholder="OpenRouter API key (stored locally)" autocomplete="off" />
+            <input type="text" id="model-jev" class="field-input" value="typesafe/jev-router" spellcheck="false" />
           </div>
           <div class="status-meta">
             <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="jev-Current">Lane 2</span></div>
@@ -86,7 +90,7 @@
             <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="jev-Latency">—</span></div>
           </div>
           <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="jev-Engine">jev / awaiting key</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="jev-Sims">pending</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="jev-Sims">pending (native source only)</span></div></div>
           <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="jev-Debug">waiting…</span></div></div>
         </div>
 
@@ -106,23 +110,6 @@
           <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="openai-Sims">pending</span></div></div>
           <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="openai-Debug">waiting…</span></div></div>
         </div>
-
-        <div class="track-card" data-provider="openrouter">
-          <div class="track-header"><span class="track-name">Jev via OpenRouter</span><span class="track-sub">chat-completions · CORS-clean</span></div>
-          <div class="road-viewport small"><canvas id="canvas-openrouter" width="220" height="380"></canvas></div>
-          <div class="key-row">
-            <input type="password" id="key-openrouter" class="field-input" placeholder="OpenRouter API key (stored locally)" autocomplete="off" />
-            <input type="text" id="model-openrouter" class="field-input" value="typesafe/jev-router" spellcheck="false" />
-          </div>
-          <div class="status-meta">
-            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="openrouter-Current">Lane 2</span></div>
-            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="openrouter-Decision">Set API key</span></div>
-            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="openrouter-Latency">—</span></div>
-          </div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="openrouter-Engine">openrouter / awaiting key</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Result</span><span class="meta-value small mono" id="openrouter-Sims">no probs (chat coercion)</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="openrouter-Debug">waiting…</span></div></div>
-        </div>
       </div>
 
       <!-- JSON Payload Card: the single shared SystemOne request, fanned out -->
@@ -130,7 +117,7 @@
         <div class="code-card-header">
           <div class="code-title">
             <span class="code-icon">⚡</span>
-            <span>Shared SystemOne request (one state → Jev + OpenAI + OpenRouter + local, parallel)</span>
+            <span>Shared SystemOne request (one state → Jev + OpenAI + local, parallel)</span>
           </div>
           <button class="copy-btn" id="manualTriggerBtn">Re-evaluate all</button>
         </div>
@@ -138,11 +125,10 @@
       </div>
       <p class="model-note">
         Fair race: one canonical obstacle set is mirrored to all three tracks, one
-        <code>state</code> is built, and the same question is sent to
-        <code>api.typesafe.ai/v1/systemone</code> (Jev, native
-        <code>choice/probabilities/confidence</code>), OpenAI
-        <code>v1/decisions</code> (<code>gpt-6-luna</code>, native
-        <code>choice/probabilities/confidence</code>), and on-device MediaPipe
+        <code>state</code> is built, and the same question is sent to Jev
+        (OpenRouter <code>typesafe/jev-router</code> by default, or native
+        <code>v1/systemone</code> via proxy), OpenAI
+        <code>v1/decisions</code> (<code>gpt-6-luna</code>), and on-device MediaPipe
         <code>DecisionMaker + EmbeddingGemma2-270M</code> in parallel via
         <code>Promise.allSettled</code>. API keys are stored only in
         <code>localStorage</code>. Each car steers only from its own provider's
@@ -178,10 +164,10 @@ lane_3 | Lane 3 is completely clear with unobstructed open road</textarea>
     </main>
   </div>
 
-  <script type="module" src="decision-engine.js?v=3"></script>
-  <script src="providers.js?v=3"></script>
-  <script src="game.js?v=3"></script>
-  <script src="race.js?v=3"></script>
-  <script src="playground.js?v=3"></script>
+  <script type="module" src="decision-engine.js?v=4"></script>
+  <script src="providers.js?v=4"></script>
+  <script src="game.js?v=4"></script>
+  <script src="race.js?v=4"></script>
+  <script src="playground.js?v=4"></script>
 </body>
 </html>

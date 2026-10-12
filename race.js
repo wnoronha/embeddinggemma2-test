@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  var LS = { jevKey: "racer.key.jev", jevModel: "racer.model.jev", oaiKey: "racer.key.openai", oaiModel: "racer.model.openai", orKey: "racer.key.openrouter", orModel: "racer.model.openrouter" };
+  var LS = { jevKey: "racer.key.jev", jevModel: "racer.model.jev", oaiKey: "racer.key.openai", oaiModel: "racer.model.openai", orKey: "racer.key.openrouter", orModel: "racer.model.openrouter", jevSrc: "racer.src.jev" };
 
   function loadLS(k, fb) {
     try {
@@ -87,12 +87,22 @@
       },
       {
         id: "jev",
-        label: "Jev SystemOne",
+        label: "Jev",
         needsKey: true,
+        // Source toggle on the Jev card: OpenRouter chat path (default,
+        // CORS-clean, no proxy needed) or native SystemOne via proxy.
         decide: function (laneState) {
-          return RP.jevDecide(laneState, {
+          var srcEl = $("src-jev");
+          var src = srcEl ? srcEl.value : "openrouter";
+          if (src === "native") {
+            return RP.jevDecide(laneState, {
+              apiKey: $("key-jev").value,
+              model: $("model-jev").value || "jev-latest",
+            });
+          }
+          return RP.openrouterDecide(laneState, {
             apiKey: $("key-jev").value,
-            model: $("model-jev").value || "jev-latest",
+            model: $("model-jev").value || "typesafe/jev-router",
           });
         },
       },
@@ -104,17 +114,6 @@
           return RP.openaiDecide(laneState, {
             apiKey: $("key-openai").value,
             model: $("model-openai").value || "gpt-6-luna",
-          });
-        },
-      },
-      {
-        id: "openrouter",
-        label: "Jev via OpenRouter",
-        needsKey: true,
-        decide: function (laneState) {
-          return RP.openrouterDecide(laneState, {
-            apiKey: $("key-openrouter").value,
-            model: $("model-openrouter").value || "typesafe/jev-router",
           });
         },
       },
@@ -176,7 +175,7 @@
       state: st.stateObj,
       model: "jev-latest",
       questions: { lane_choice: { type: "choice", instructions: st.instructions, criteria: st.criteria } },
-      _fanout: "same state -> jev + openai-decisions + openrouter(jev-router) + local in parallel (Promise.allSettled)",
+      _fanout: "same state -> jev (openrouter|native) + openai-decisions + local in parallel (Promise.allSettled)",
       _openai_note: "openai uses native POST /v1/decisions (gpt-6-luna choice); jev uses POST /v1/systemone via /api/jev proxy",
     }, null, 2);
   }
@@ -282,23 +281,53 @@
   function boot() {
     if (!$("canvas-local")) return; // not race page
     // Restore keys/models.
-    $("key-jev").value = loadLS(LS.jevKey, "");
-    $("model-jev").value = loadLS(LS.jevModel, "jev-latest");
     $("key-openai").value = loadLS(LS.oaiKey, "");
     $("model-openai").value = loadLS(LS.oaiModel, "gpt-6-luna");
-    $("key-openrouter").value = loadLS(LS.orKey, "");
-    $("model-openrouter").value = loadLS(LS.orModel, "typesafe/jev-router");
-    [["key-jev", LS.jevKey], ["model-jev", LS.jevModel], ["key-openai", LS.oaiKey], ["model-openai", LS.oaiModel], ["key-openrouter", LS.orKey], ["model-openrouter", LS.orModel]]
+    [["key-openai", LS.oaiKey], ["model-openai", LS.oaiModel]]
       .forEach(function ([id, k]) {
         $(id).addEventListener("input", function (e) { saveLS(k, e.target.value); });
       });
+
+    // Jev card: source toggle (openrouter default) with per-source key/model
+    // slots sharing one pair of inputs. Existing stored keys are picked up.
+    var jevSrc = loadLS(LS.jevSrc, "openrouter");
+    if (jevSrc !== "native" && jevSrc !== "openrouter") jevSrc = "openrouter";
+    function jevSlots(src) {
+      return src === "native"
+        ? { key: LS.jevKey, model: LS.jevModel, keyPh: "TypeSafe API key (stored locally)", modelDflt: "jev-latest", sub: "native SystemOne · via proxy" }
+        : { key: LS.orKey, model: LS.orModel, keyPh: "OpenRouter API key (stored locally)", modelDflt: "typesafe/jev-router", sub: "via OpenRouter · CORS-clean" };
+    }
+    function loadJevFields(src) {
+      var s = jevSlots(src);
+      $("key-jev").value = loadLS(s.key, "");
+      $("model-jev").value = loadLS(s.model, s.modelDflt);
+      $("key-jev").placeholder = s.keyPh;
+      var card = (typeof document.querySelector === "function")
+        ? document.querySelector('.track-card[data-provider="jev"] .track-sub')
+        : null;
+      if (card) card.textContent = s.sub;
+    }
+    function saveJevFields(src) {
+      var s = jevSlots(src);
+      saveLS(s.key, $("key-jev").value);
+      saveLS(s.model, $("model-jev").value);
+    }
+    $("src-jev").value = jevSrc;
+    loadJevFields(jevSrc);
+    $("src-jev").addEventListener("change", function (e) {
+      saveJevFields(jevSrc); // persist the previous source's edits first
+      jevSrc = e.target.value;
+      saveLS(LS.jevSrc, jevSrc);
+      loadJevFields(jevSrc);
+    });
+    $("key-jev").addEventListener("input", function () { saveJevFields(jevSrc); });
+    $("model-jev").addEventListener("input", function () { saveJevFields(jevSrc); });
 
     var providers = makeProviders();
     var defs = [
       { canvasId: "canvas-local", prefix: "local-" },
       { canvasId: "canvas-jev", prefix: "jev-" },
       { canvasId: "canvas-openai", prefix: "openai-" },
-      { canvasId: "canvas-openrouter", prefix: "openrouter-" },
     ];
     controller.tracks = providers.map(function (p, i) {
       var game = new window.CarGame({

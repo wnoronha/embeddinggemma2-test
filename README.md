@@ -8,13 +8,13 @@ to three decision providers. Pure client-side; API keys stay in `localStorage`.
 | Track | Provider | Wire format | Returns |
 | --- | --- | --- | --- |
 | Local | MediaPipe `DecisionMaker` + `embeddinggemma-2-text-270m` (fallback `TextEmbedder` + `embedding_gemma.task`) | on-device | lane only (+ cosine sims on fallback path) |
+| Jev — native source | `POST https://api.typesafe.ai/v1/systemone` (`jev-latest`; browser-blocked direct, use `server.py` proxy) | `{ state, model, questions: { lane_choice: {...} } }` | `choice` + `probabilities` + `confidence` |
+| Jev — OpenRouter source (default) | `POST https://openrouter.ai/api/v1/chat/completions` (`typesafe/jev-router`; CORS-clean, no proxy) | same state as text + `json_schema {lane}` | coerced lane (chat model, no calibrated probs) |
+| OpenAI | `POST https://api.openai.com/v1/decisions` (`gpt-6-luna`, native `choice`) | `{ model, input, questions: [{ type: "choice", name, instructions, choices }] }` | `choice` + `probabilities` + `confidence` |
 
 Model weights (~165MB) download once and persist in the Cache API
 (`decision-models-v1`); reloads serve from cache with a live `%` progress readout
 while downloading. `DecisionEngine.clearModelCache()` (DevTools console) wipes it.
-| Jev | `POST https://api.typesafe.ai/v1/systemone` (`jev-latest`) | `{ state, model, questions: { lane_choice: { type: "choice", instructions, criteria } } }` | `choice` + `probabilities` + `confidence` |
-| OpenAI | `POST https://api.openai.com/v1/decisions` (`gpt-6-luna`, native `choice`) | `{ model, input, questions: [{ type: "choice", name, instructions, choices }] }` | `choice` + `probabilities` + `confidence` |
-| OpenRouter | `POST https://openrouter.ai/api/v1/chat/completions` (`typesafe/jev-router`) — no CORS issues (preflight 204 + `ACAO: *`) | same state as text + `json_schema {lane}` | coerced lane (chat model, no calibrated probs) |
 
 ## Run it
 
