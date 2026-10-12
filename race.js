@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  var LS = { jevKey: "racer.key.jev", jevModel: "racer.model.jev", oaiKey: "racer.key.openai", oaiModel: "racer.model.openai" };
+  var LS = { jevKey: "racer.key.jev", jevModel: "racer.model.jev", oaiKey: "racer.key.openai", oaiModel: "racer.model.openai", orKey: "racer.key.openrouter", orModel: "racer.model.openrouter" };
 
   function loadLS(k, fb) {
     try {
@@ -98,12 +98,23 @@
       },
       {
         id: "openai",
-        label: "OpenAI",
+        label: "OpenAI Decisions",
         needsKey: true,
         decide: function (laneState) {
           return RP.openaiDecide(laneState, {
             apiKey: $("key-openai").value,
             model: $("model-openai").value || "gpt-6-luna",
+          });
+        },
+      },
+      {
+        id: "openrouter",
+        label: "Jev via OpenRouter",
+        needsKey: true,
+        decide: function (laneState) {
+          return RP.openrouterDecide(laneState, {
+            apiKey: $("key-openrouter").value,
+            model: $("model-openrouter").value || "typesafe/jev-router",
           });
         },
       },
@@ -165,7 +176,7 @@
       state: st.stateObj,
       model: "jev-latest",
       questions: { lane_choice: { type: "choice", instructions: st.instructions, criteria: st.criteria } },
-      _fanout: "same state -> jev + openai + local in parallel (Promise.allSettled)",
+      _fanout: "same state -> jev + openai-decisions + openrouter(jev-router) + local in parallel (Promise.allSettled)",
       _openai_note: "openai uses native POST /v1/decisions (gpt-6-luna choice); jev uses POST /v1/systemone via /api/jev proxy",
     }, null, 2);
   }
@@ -275,7 +286,9 @@
     $("model-jev").value = loadLS(LS.jevModel, "jev-latest");
     $("key-openai").value = loadLS(LS.oaiKey, "");
     $("model-openai").value = loadLS(LS.oaiModel, "gpt-6-luna");
-    [["key-jev", LS.jevKey], ["model-jev", LS.jevModel], ["key-openai", LS.oaiKey], ["model-openai", LS.oaiModel]]
+    $("key-openrouter").value = loadLS(LS.orKey, "");
+    $("model-openrouter").value = loadLS(LS.orModel, "typesafe/jev-router");
+    [["key-jev", LS.jevKey], ["model-jev", LS.jevModel], ["key-openai", LS.oaiKey], ["model-openai", LS.oaiModel], ["key-openrouter", LS.orKey], ["model-openrouter", LS.orModel]]
       .forEach(function ([id, k]) {
         $(id).addEventListener("input", function (e) { saveLS(k, e.target.value); });
       });
@@ -285,6 +298,7 @@
       { canvasId: "canvas-local", prefix: "local-" },
       { canvasId: "canvas-jev", prefix: "jev-" },
       { canvasId: "canvas-openai", prefix: "openai-" },
+      { canvasId: "canvas-openrouter", prefix: "openrouter-" },
     ];
     controller.tracks = providers.map(function (p, i) {
       var game = new window.CarGame({

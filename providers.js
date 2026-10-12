@@ -248,12 +248,18 @@
     if (!model) throw new Error("missing model");
     var baseUrl = (opts.baseUrl || OPENAI_DEFAULT_BASE).replace(/\/+$/, "");
     var t0 = performance.now();
+    var headers = {
+      "Authorization": "Bearer " + apiKey,
+      "Content-Type": "application/json",
+    };
+    if (opts.extraHeaders) {
+      for (var k in opts.extraHeaders) {
+        if (Object.prototype.hasOwnProperty.call(opts.extraHeaders, k)) headers[k] = opts.extraHeaders[k];
+      }
+    }
     var res = await fetch(baseUrl + "/chat/completions", {
       method: "POST",
-      headers: {
-        "Authorization": "Bearer " + apiKey,
-        "Content-Type": "application/json",
-      },
+      headers: headers,
       body: JSON.stringify({
         model: model,
         temperature: 0,
@@ -311,9 +317,33 @@
       probabilities: null,
       confidence: null,
       latencyMs: latencyMs,
-      engine: "compat/" + model,
+      engine: (opts.engineTag || "compat") + "/" + model,
       raw: json,
     };
+  }
+
+  // --- OpenRouter (Jev Router as a chat model) ---
+  // No CORS issues: api.openrouter.ai answers preflights with HTTP 204 +
+  // Access-Control-Allow-Origin: *. `typesafe/jev-router` runs on Jev under
+  // the hood but speaks chat-completions, so the lane is coerced via
+  // json_schema (no calibrated probabilities — same shape as genericDecide).
+  var OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+  function openrouterDecide(laneState, opts) {
+    opts = opts || {};
+    var referer = "https://wnoronha.github.io/systemone-racer/";
+    try {
+      if (typeof location !== "undefined" && location.origin && location.origin !== "null") {
+        referer = location.origin + "/";
+      }
+    } catch (e) { /* non-browser */ }
+    opts.baseUrl = opts.baseUrl || OPENROUTER_BASE;
+    opts.model = (opts.model || "typesafe/jev-router").trim() || "typesafe/jev-router";
+    opts.engineTag = "openrouter";
+    opts.extraHeaders = {
+      "HTTP-Referer": referer,
+      "X-Title": "SystemOne Racer",
+    };
+    return genericDecide(laneState, opts);
   }
 
   window.RaceProviders = {
@@ -321,6 +351,7 @@
     JEV_PROXY: JEV_PROXY,
     JEV_PUBLIC_PROXY: JEV_PUBLIC_PROXY,
     OPENAI_DEFAULT_BASE: OPENAI_DEFAULT_BASE,
+    OPENROUTER_BASE: OPENROUTER_BASE,
     INSTRUCTIONS: INSTRUCTIONS,
     parseLaneKey: parseLaneKey,
     buildLaneState: buildLaneState,
@@ -328,5 +359,6 @@
     jevDecide: jevDecide,
     openaiDecide: openaiDecide,
     genericDecide: genericDecide,
+    openrouterDecide: openrouterDecide,
   };
 })();

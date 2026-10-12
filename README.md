@@ -14,6 +14,7 @@ Model weights (~165MB) download once and persist in the Cache API
 while downloading. `DecisionEngine.clearModelCache()` (DevTools console) wipes it.
 | Jev | `POST https://api.typesafe.ai/v1/systemone` (`jev-latest`) | `{ state, model, questions: { lane_choice: { type: "choice", instructions, criteria } } }` | `choice` + `probabilities` + `confidence` |
 | OpenAI | `POST https://api.openai.com/v1/decisions` (`gpt-6-luna`, native `choice`) | `{ model, input, questions: [{ type: "choice", name, instructions, choices }] }` | `choice` + `probabilities` + `confidence` |
+| OpenRouter | `POST https://openrouter.ai/api/v1/chat/completions` (`typesafe/jev-router`) — no CORS issues (preflight 204 + `ACAO: *`) | same state as text + `json_schema {lane}` | coerced lane (chat model, no calibrated probs) |
 
 ## Run it
 
