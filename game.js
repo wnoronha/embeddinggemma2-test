@@ -10,10 +10,14 @@ const ROAD_CONFIG = {
 };
 
 class CarGame {
-  constructor() {
-    this.canvas = document.getElementById("roadCanvas");
-    this.canvas.width = 280;
-    this.canvas.height = 460;
+  constructor(opts = {}) {
+    this.canvas = document.getElementById(opts.canvasId || "roadCanvas");
+    if (!this.canvas) return;
+    if (!opts.canvasId) {
+      // Legacy single-track canvas: enforce default size.
+      this.canvas.width = 280;
+      this.canvas.height = 460;
+    }
     this.ctx = this.canvas.getContext("2d");
 
     this.width = this.canvas.width;
@@ -44,16 +48,29 @@ class CarGame {
     this.aiEngine = "loading"; // loading | decisionmaker | textembedder | failed
     this.lastSimilarities = null;
 
-    // DOM Elements
-    this.pauseBtn = document.getElementById("pauseBtn");
-    this.manualTriggerBtn = document.getElementById("manualTriggerBtn");
-    this.jsonPayloadPreview = document.getElementById("jsonPayloadPreview");
-    this.currentLaneDisplay = document.getElementById("currentLaneDisplay");
-    this.aiDecisionDisplay = document.getElementById("aiDecisionDisplay");
-    this.latencyDisplay = document.getElementById("latencyDisplay");
-    this.engineDisplay = document.getElementById("engineDisplay");
-    this.simsDisplay = document.getElementById("simsDisplay");
-    this.debugDisplay = document.getElementById("debugDisplay");
+    // Multi-track / remote-provider hook (race mode). When set,
+    // evaluateDecisions() delegates to provider.decide(laneState) instead of
+    // the local on-device engine. provider: { id, label, decide(laneState, opts) }.
+    this.provider = opts.provider || null;
+    this.providerOpts = opts.providerOpts || (() => ({}));
+    this.onDecision = opts.onDecision || null;
+    this._btnPrefix = opts.idPrefix || "";
+
+    // DOM Elements (parameterized so N tracks can coexist).
+    // Race mode (idPrefix set): strict per-track lookup, no global fallback —
+    // shared controls live in race.js. Legacy single-track: global ids.
+    const hx = (base, fb) => opts.idPrefix
+      ? document.getElementById(opts.idPrefix + base)
+      : document.getElementById(fb);
+    this.pauseBtn = hx("PauseBtn", "pauseBtn");
+    this.manualTriggerBtn = hx("TriggerBtn", "manualTriggerBtn");
+    this.jsonPayloadPreview = hx("Payload", "jsonPayloadPreview");
+    this.currentLaneDisplay = hx("Current", "currentLaneDisplay");
+    this.aiDecisionDisplay = hx("Decision", "aiDecisionDisplay");
+    this.latencyDisplay = hx("Latency", "latencyDisplay");
+    this.engineDisplay = hx("Engine", "engineDisplay");
+    this.simsDisplay = hx("Sims", "simsDisplay");
+    this.debugDisplay = hx("Debug", "debugDisplay");
 
     // Initial setup
     this.bindEvents();
@@ -123,10 +140,26 @@ class CarGame {
     this.evaluateDecisions(true);
   }
 
+  setObstacles(lanes, opts = {}) {
+    // Race mode: mirrored spawn from RaceController. Same lanes on every track.
+    if (this.isCrashed && !opts.keepCrashed) this.resetGame();
+    this.obstacles = lanes.map((lane, i) => ({
+      id: `race-${i}-${lane}`,
+      lane,
+      y: -20,
+      width: this.laneWidth - 14,
+      height: 24,
+      isRandom: !!opts.isRandom,
+    }));
+    this.randomObstacleCount = opts.isRandom ? lanes.length : 0;
+    this.updateButtonStates();
+    this.updatePayloadPreview();
+  }
+
   updateButtonStates() {
     const blockedLanes = new Set(this.obstacles.map(o => o.lane));
     for (let l = 1; l <= 3; l++) {
-      const btn = document.getElementById(`blockBtn${l}`);
+      const btn = document.getElementById(`${this._btnPrefix || ""}blockBtn${l}`);
       if (btn) {
         if (blockedLanes.has(l)) {
           btn.classList.add("active");
@@ -208,6 +241,8 @@ class CarGame {
   listenForEngine() {
     window.addEventListener("decision-engine-status", (e) => {
       const s = e.detail || {};
+      // Remote-provider tracks ignore local engine status (race.js owns their HUD).
+      if (this.provider) return;
       if (s.status === "ready-decision") this.aiEngine = "decisionmaker";
       else if (s.status === "ready-embed") this.aiEngine = "textembedder";
       else if (s.status === "failed") this.aiEngine = "failed";
@@ -257,17 +292,26 @@ class CarGame {
       const sims = opts.similarities
         ? ` sims=[${[1, 2, 3].map(l => (opts.similarities[l] ?? 0).toFixed(3)).join(", ")}]`
         : "";
+      const probs = opts.probabilities
+        ? ` probs=[${[1, 2, 3].map(l => (opts.probabilities[`lane_${l}`] ?? 0).toFixed(2)).join(", ")}]`
+        : "";
+      const conf = typeof opts.confidence === "number" ? ` conf=${opts.confidence.toFixed(2)}` : "";
       this.debugDisplay.textContent =
-        `engine=${opts.engine || this.aiEngine}${sims} ${opts.latencyMs ?? 0}ms`;
+        `engine=${opts.engine || this.aiEngine}${sims}${probs}${conf} ${opts.latencyMs ?? 0}ms`;
     }
     if (this.simsDisplay) {
-      this.simsDisplay.textContent = opts.similarities
-        ? [1, 2, 3].map(l => `L${l} ${(opts.similarities[l] ?? 0).toFixed(3)}`).join("  ")
-        : "sims: n/a (DecisionMaker scores internally)";
+      if (opts.similarities) {
+        this.simsDisplay.textContent = [1, 2, 3].map(l => `L${l} ${(opts.similarities[l] ?? 0).toFixed(3)}`).join("  ");
+      } else if (opts.probabilities) {
+        this.simsDisplay.textContent = [1, 2, 3].map(l => `L${l} ${(opts.probabilities[`lane_${l}`] ?? 0).toFixed(2)}`).join("  ")
+          + (typeof opts.confidence === "number" ? `  conf ${opts.confidence.toFixed(2)}` : "");
+      } else {
+        this.simsDisplay.textContent = "sims: n/a (DecisionMaker scores internally)";
+      }
     }
   }
 
-  async evaluateDecisions(force = false) {
+  async evaluateDecisions(force = false, sharedState = null) {
     if (this.isEvaluating && !force) return;
     if (this.isCrashed) return;
 
@@ -275,18 +319,56 @@ class CarGame {
     const seq = ++this._evalSeq;
     try {
       const payload = this.getDecisionPayload();
-      const activeBarriers = this.obstacles.filter(o => o.y < this.carY + 30 && o.y > -50);
-      const blockedLanes = new Set(activeBarriers.map(o => o.lane));
-      const openLanes = [1, 2, 3].filter(l => !blockedLanes.has(l));
+      // Race mode with shared fair-race state: hold checks use the canonical
+      // blocked set so all tracks agree (their own y positions may differ by a frame).
+      let blockedLanes, openLanes, blockedArr;
+      if (this.provider && sharedState) {
+        blockedArr = (sharedState.blockedLanes || []).slice();
+        blockedLanes = new Set(blockedArr);
+        openLanes = (sharedState.openLanes || [1, 2, 3].filter(l => !blockedLanes.has(l))).slice();
+      } else {
+        const activeBarriers = this.obstacles.filter(o => o.y < this.carY + 30 && o.y > -50);
+        blockedArr = [...new Set(activeBarriers.map(o => o.lane))];
+        blockedLanes = new Set(blockedArr);
+        openLanes = [1, 2, 3].filter(l => !blockedLanes.has(l));
+      }
 
       // No decision needed: road clear -> cruise, hold lane. No model call.
       if (blockedLanes.size === 0) {
-        this.applyHoldState("Cruising Clear", { engine: this.aiEngine });
+        this.applyHoldState("Cruising Clear", { engine: this.provider ? this.provider.label : this.aiEngine });
         return;
       }
       // No escape: all lanes blocked -> hold lane, show Trapped. No model call.
       if (openLanes.length === 0) {
-        this.applyHoldState("Warning: Trapped!", { engine: this.aiEngine });
+        this.applyHoldState("Warning: Trapped!", { engine: this.provider ? this.provider.label : this.aiEngine });
+        return;
+      }
+
+      // Remote-provider path (race mode): shared fair-race state + parallel fetch.
+      if (this.provider) {
+        try {
+          const RP = window.RaceProviders;
+          const laneState = sharedState || (RP ? RP.buildLaneState(blockedArr, this.currentLane)
+            : { blockedLanes: blockedArr, openLanes });
+          const res = await this.provider.decide(laneState, this.providerOpts());
+          if (seq !== this._evalSeq) return; // stale: a newer evaluation won
+          this.applyModelDecision(res.chosen, {
+            similarities: res.similarities || null,
+            latencyMs: res.latencyMs,
+            engine: res.engine,
+            probabilities: res.probabilities,
+            confidence: res.confidence,
+          });
+          if (this.onDecision) this.onDecision(res, null);
+        } catch (err) {
+          if (seq !== this._evalSeq) return;
+          console.warn(`[game:${this.provider.id}] inference failed, holding lane:`, err);
+          const msg = String(err && err.message || err);
+          const short = msg.includes("missing") && msg.includes("key") ? "Set API key — holding"
+            : msg.slice(0, 60);
+          this.applyHoldState(short || "Model error — holding lane", { engine: this.provider.label });
+          if (this.onDecision) this.onDecision(null, err);
+        }
         return;
       }
 
@@ -391,8 +473,10 @@ class CarGame {
       if (obs.y > this.height + 40) {
         obs.y = -30;
 
-        // If in random mode, re-roll lanes randomly across 1, 2, 3
-        if (obs.isRandom) {
+        // If in random mode, re-roll lanes randomly across 1, 2, 3.
+        // Skipped in race mode (this.provider): per-track re-rolls would diverge
+        // and break the fair-race mirror. Random tracks loop fixed lanes.
+        if (obs.isRandom && !this.provider) {
           const usedLanes = new Set(this.obstacles.filter(o => o !== obs && o.y < 50).map(o => o.lane));
           const available = [1, 2, 3].filter(l => !usedLanes.has(l));
           if (available.length > 0) {
@@ -419,10 +503,13 @@ class CarGame {
       this.updatePayloadPreview();
     }
 
-    // Check decisions regularly as barriers scroll
-    const now = performance.now();
-    if (now - this.lastDecisionTime > this.decisionCooldown) {
-      this.evaluateDecisions();
+    // Check decisions regularly as barriers scroll.
+    // Skipped in race mode: RaceController drives parallel fan-out on a cadence.
+    if (!this.provider) {
+      const now = performance.now();
+      if (now - this.lastDecisionTime > this.decisionCooldown) {
+        this.evaluateDecisions();
+      }
     }
   }
 
@@ -596,9 +683,13 @@ class CarGame {
   }
 }
 
-// Global button handlers
+// Global button handlers (single-track legacy mode only; race mode uses RaceController)
 let gameInstance = null;
+window.CarGame = CarGame;
 window.addEventListener("DOMContentLoaded", () => {
+  // If race canvases exist, race.js owns the tracks — skip legacy singleton.
+  if (document.getElementById("canvas-local")) return;
+  if (!document.getElementById("roadCanvas")) return;
   gameInstance = new CarGame();
 });
 

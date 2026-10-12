@@ -29,96 +29,107 @@
       <!-- Section Title & Tabs -->
       <div class="showcase-header">
         <div class="tab-group">
-          <button class="tab-btn active" id="tabDriving">Driving</button>
+          <button class="tab-btn active" id="tabDriving">Race</button>
           <button class="tab-btn" id="tabPlayground">Playground</button>
         </div>
-        <button id="pauseBtn" class="link-btn">Pause animation</button>
+        <button id="pauseBtn" class="link-btn">Pause race</button>
       </div>
 
       <section id="drivingView">
-      <h2 class="question-headline">Which lane should the car choose?</h2>
+      <h2 class="question-headline">System-One Racer — same road, three brains</h2>
+      <p class="playground-sub">One canonical obstacle set mirrored to all tracks. One shared state, fanned out in parallel via <code>Promise.allSettled</code> to Jev + OpenAI + local EmbeddingGemma. Keys stay in your browser (localStorage).</p>
 
-      <!-- Visual Stage: Road on Left, Decision readout on Right -->
-      <div class="interactive-stage">
-        <!-- Road Canvas -->
-        <div class="road-viewport">
-          <canvas id="roadCanvas" width="280" height="460"></canvas>
+      <!-- Leaderboard -->
+      <div class="leaderboard" id="leaderboard"></div>
+
+      <!-- Global race controls -->
+      <div class="control-box race-controls">
+        <div class="control-title">Race control (mirrored to all 3 tracks):</div>
+        <div class="button-row">
+          <button class="action-btn" id="blockBtn1" onclick="raceSpawn(1)">Block Lane 1</button>
+          <button class="action-btn" id="blockBtn2" onclick="raceSpawn(2)">Block Lane 2</button>
+          <button class="action-btn" id="blockBtn3" onclick="raceSpawn(3)">Block Lane 3</button>
         </div>
-
-        <!-- Decision readout & Controls -->
-        <div class="evaluation-panel">
-          <!-- Minimal Status Bar -->
-          <div class="status-meta">
-            <div class="meta-col">
-              <span class="meta-label">Current</span>
-              <span class="meta-value" id="currentLaneDisplay">Lane 2</span>
-            </div>
-            <div class="meta-col">
-              <span class="meta-label">Selected Lane</span>
-              <span class="meta-value highlight" id="aiDecisionDisplay">Loading…</span>
-            </div>
-            <div class="meta-col">
-              <span class="meta-label">Inference Time</span>
-              <span class="meta-value" id="latencyDisplay">—</span>
-            </div>
-          </div>
-
-          <!-- Honest engine + similarity readout: proves real inference -->
-          <div class="status-meta engine-meta">
-            <div class="meta-col wide">
-              <span class="meta-label">Engine (MediaPipe + EmbeddingGemma)</span>
-              <span class="meta-value small" id="engineDisplay">loading model…</span>
-            </div>
-          </div>
-          <div class="status-meta engine-meta">
-            <div class="meta-col wide">
-              <span class="meta-label">Cosine sims (query vs each lane)</span>
-              <span class="meta-value small mono" id="simsDisplay">sims: pending model load</span>
-            </div>
-          </div>
-          <div class="status-meta engine-meta">
-            <div class="meta-col wide">
-              <span class="meta-label">Debug (engine · latency)</span>
-              <span class="meta-value small mono" id="debugDisplay">waiting for first inference…</span>
-            </div>
-          </div>
-
-          <!-- Interactive Obstacle Buttons -->
-          <div class="control-box">
-            <div class="control-title">Spawn Barriers:</div>
-            <div class="button-row">
-              <button class="action-btn" id="blockBtn1" onclick="spawnObstacle(1)">Block Lane 1</button>
-              <button class="action-btn" id="blockBtn2" onclick="spawnObstacle(2)">Block Lane 2</button>
-              <button class="action-btn" id="blockBtn3" onclick="spawnObstacle(3)">Block Lane 3</button>
-            </div>
-            <div class="button-row">
-              <button class="action-btn secondary" onclick="spawnRandomObstacles(1)">1 Random</button>
-              <button class="action-btn secondary" onclick="spawnRandomObstacles(2)">2 Random</button>
-              <button class="action-btn secondary" onclick="clearObstacles()">Clear Road</button>
-            </div>
-          </div>
+        <div class="button-row">
+          <button class="action-btn secondary" onclick="raceRandom(1)">1 Random</button>
+          <button class="action-btn secondary" onclick="raceRandom(2)">2 Random</button>
+          <button class="action-btn secondary" onclick="raceClear()">Clear Road</button>
+          <button class="action-btn secondary active" id="autoBtn">Auto race: on</button>
         </div>
       </div>
 
-      <!-- JSON Payload Card (Matches OpenAI Docs bottom code snippet) -->
+      <!-- Three tracks, each with its own 3 lanes -->
+      <div class="race-grid">
+        <div class="track-card" data-provider="local">
+          <div class="track-header"><span class="track-name">Local · EmbeddingGemma</span><span class="track-sub">on-device · no key</span></div>
+          <div class="road-viewport small"><canvas id="canvas-local" width="220" height="380"></canvas></div>
+          <div class="status-meta">
+            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="local-Current">Lane 2</span></div>
+            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="local-Decision">Loading…</span></div>
+            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="local-Latency">—</span></div>
+          </div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="local-Engine">loading model…</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Sims / probs</span><span class="meta-value small mono" id="local-Sims">pending</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="local-Debug">waiting…</span></div></div>
+        </div>
+
+        <div class="track-card" data-provider="jev">
+          <div class="track-header"><span class="track-name">Jev · SystemOne</span><span class="track-sub">api.typesafe.ai</span></div>
+          <div class="road-viewport small"><canvas id="canvas-jev" width="220" height="380"></canvas></div>
+          <div class="key-row">
+            <input type="password" id="key-jev" class="field-input" placeholder="TypeSafe API key (stored locally)" autocomplete="off" />
+            <input type="text" id="model-jev" class="field-input" value="jev-latest" spellcheck="false" />
+          </div>
+          <div class="status-meta">
+            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="jev-Current">Lane 2</span></div>
+            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="jev-Decision">Set API key</span></div>
+            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="jev-Latency">—</span></div>
+          </div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="jev-Engine">jev / awaiting key</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="jev-Sims">pending</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="jev-Debug">waiting…</span></div></div>
+        </div>
+
+        <div class="track-card" data-provider="openai">
+          <div class="track-header"><span class="track-name">OpenAI Decisions</span><span class="track-sub">v1/decisions · gpt-6-luna</span></div>
+          <div class="road-viewport small"><canvas id="canvas-openai" width="220" height="380"></canvas></div>
+          <div class="key-row">
+            <input type="password" id="key-openai" class="field-input" placeholder="OpenAI API key (stored locally)" autocomplete="off" />
+            <input type="text" id="model-openai" class="field-input" value="gpt-6-luna" spellcheck="false" />
+          </div>
+          <div class="status-meta">
+            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="openai-Current">Lane 2</span></div>
+            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="openai-Decision">Set API key</span></div>
+            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="openai-Latency">—</span></div>
+          </div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="openai-Engine">openai / awaiting key</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="openai-Sims">pending</span></div></div>
+          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="openai-Debug">waiting…</span></div></div>
+        </div>
+      </div>
+
+      <!-- JSON Payload Card: the single shared SystemOne request, fanned out -->
       <div class="code-showcase-card">
         <div class="code-card-header">
           <div class="code-title">
             <span class="code-icon">⚡</span>
-            <span>Real-time Decision Schema (Evaluated by EmbeddingGemma model)</span>
+            <span>Shared SystemOne request (one state → Jev + OpenAI + local, parallel)</span>
           </div>
-          <button class="copy-btn" id="manualTriggerBtn">Re-evaluate</button>
+          <button class="copy-btn" id="manualTriggerBtn">Re-evaluate all</button>
         </div>
         <pre class="code-content" id="jsonPayloadPreview"></pre>
       </div>
       <p class="model-note">
-        Primary: MediaPipe <code>@mediapipe/tasks-decision</code> DecisionMaker +
-        <code>embeddinggemma-2-text-270m</code> (HuggingFace litert-community).
-        Fallback: MediaPipe <code>@mediapipe/tasks-text</code> TextEmbedder +
-        <code>embedding_gemma.task</code> (GCS mediapipe-models), argmax over cosine
-        similarity. The engine returns a lane number only — no probabilities.
-        Open DevTools console for per-inference <code>chosen / sims / latency</code> logs.
-        Until the model loads the car holds its lane and shows
+        Fair race: one canonical obstacle set is mirrored to all three tracks, one
+        <code>state</code> is built, and the same question is sent to
+        <code>api.typesafe.ai/v1/systemone</code> (Jev, native
+        <code>choice/probabilities/confidence</code>), OpenAI
+        <code>v1/decisions</code> (<code>gpt-6-luna</code>, native
+        <code>choice/probabilities/confidence</code>), and on-device MediaPipe
+        <code>DecisionMaker + EmbeddingGemma2-270M</code> in parallel via
+        <code>Promise.allSettled</code>. API keys are stored only in
+        <code>localStorage</code>. Each car steers only from its own provider's
+        answer; errors hold the lane. Until the local model loads it shows
         <code>Waiting for model…</code>.
       </p>
       </section>
@@ -151,7 +162,9 @@ lane_3 | Lane 3 is completely clear with unobstructed open road</textarea>
   </div>
 
   <script type="module" src="decision-engine.js"></script>
+  <script src="providers.js"></script>
   <script src="game.js"></script>
+  <script src="race.js"></script>
   <script src="playground.js"></script>
 </body>
 </html>

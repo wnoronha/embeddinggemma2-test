@@ -480,3 +480,116 @@ body {
   padding: 14px 16px;
   min-height: 80px;
 }
+
+/* Race mode */
+.page-wrapper {
+  max-width: 1180px;
+}
+
+.race-controls {
+  background: #090b0f;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid #191d26;
+}
+
+.race-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1020px) {
+  .race-grid {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+}
+
+.track-card {
+  background: #090b0f;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #191d26;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.track-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.track-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.track-sub {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.road-viewport.small {
+  width: 100%;
+  height: 380px;
+}
+
+.road-viewport.small canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.key-row .field-input {
+  font-size: 0.78rem;
+  padding: 8px 10px;
+}
+
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #090b0f;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid #191d26;
+}
+
+.lb-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.lb-name {
+  color: var(--text-main);
+  font-weight: 600;
+  min-width: 170px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.lb-cell {
+  white-space: nowrap;
+}
+
+#autoBtn.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+  box-shadow: none;
+}

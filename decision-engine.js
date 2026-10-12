@@ -113,23 +113,90 @@ export function isModelReady() {
   return engine.status === "ready-decision" || engine.status === "ready-embed";
 }
 
+const MODEL_CACHE = "decision-models-v1";
+
+// Cache-first model bytes: Cache API persists across reloads, so the ~165MB
+// download happens once. We store a freshly constructed Response (built from
+// the downloaded Blob) to sidestep redirect-response caching quirks, then hand
+// MediaPipe a blob: URL — the SDK fetches zero bytes over the network.
+// Falls back to the direct URL when Cache API is unavailable (e.g. file://).
+// onProgress receives { cached, received, total, pct } for status display.
+async function cacheFirstModelUrl(url, onProgress) {
+  const noCache = () => ({ assetPath: url, cached: false });
+  try {
+    if (typeof caches === "undefined") return noCache();
+    const cache = await caches.open(MODEL_CACHE);
+    const hit = await cache.match(url);
+    if (hit) {
+      onProgress && onProgress({ cached: true, received: 0, total: 0, pct: 100 });
+      return { assetPath: URL.createObjectURL(await hit.blob()), cached: true };
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`model download http ${res.status}`);
+    const total = parseInt(res.headers.get("content-length") || "0", 10) || 0;
+    let blob;
+    if (res.body && res.body.getReader) {
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        onProgress && onProgress({ cached: false, received, total, pct: total ? Math.round((received / total) * 100) : -1 });
+      }
+      blob = new Blob(chunks, { type: "application/octet-stream" });
+    } else {
+      blob = await res.blob();
+      onProgress && onProgress({ cached: false, received: blob.size, total: blob.size, pct: 100 });
+    }
+    try {
+      await cache.put(url, new Response(blob, { headers: { "Content-Type": "application/octet-stream" } }));
+    } catch (e) {
+      console.warn("[decision-engine] model cache put failed, continuing uncached:", e);
+    }
+    return { assetPath: URL.createObjectURL(blob), cached: false };
+  } catch (e) {
+    if (e && String(e.message || "").startsWith("model download")) throw e;
+    console.warn("[decision-engine] Cache API unavailable, loading model direct:", e);
+    return noCache();
+  }
+}
+
+export async function clearModelCache() {
+  try {
+    if (typeof caches !== "undefined") return await caches.delete(MODEL_CACHE);
+  } catch (e) { console.warn("[decision-engine] clearModelCache failed:", e); }
+  return false;
+}
+
+function progressText(p, label) {
+  if (!p) return label;
+  if (p.cached) return "cache hit — preparing model…";
+  if (p.pct >= 0) return `${label} ${p.pct}% (${(p.received / 1048576).toFixed(0)}MB)`;
+  return `${label} (${(p.received / 1048576).toFixed(0)}MB)`;
+}
+
 async function tryInitDecisionMaker() {
   setStatus({ status: "loading-decision", loadProgress: "decision wasm…", modelUrl: DECISION_MODEL_URL });
   const mod = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-decision@1.1.0/decision_bundle.mjs");
   const { DecisionMaker, FilesetResolver } = mod;
   const fileset = await FilesetResolver.forDecisionTasks(DECISION_WASM_BASE);
-  setStatus({ loadProgress: "downloading EmbeddingGemma2-270M (~165MB)…" });
+  const dl = await cacheFirstModelUrl(DECISION_MODEL_URL, (p) =>
+    setStatus({ loadProgress: progressText(p, "EmbeddingGemma2-270M (~165MB)") }));
+  console.info(`[decision-engine] model source: ${dl.cached ? "cache" : "network"}`);
   let maker;
   try {
     maker = await DecisionMaker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: DECISION_MODEL_URL, delegate: "GPU" },
+      baseOptions: { modelAssetPath: dl.assetPath, delegate: "GPU" },
       maxNumTokens: 512,
     });
   } catch (e) {
     // GPU delegate often fails on desktop WASM — retry CPU before giving up.
     console.warn("[decision-engine] GPU init failed, retrying CPU:", e);
     maker = await DecisionMaker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: DECISION_MODEL_URL, delegate: "CPU" },
+      baseOptions: { modelAssetPath: dl.assetPath, delegate: "CPU" },
       maxNumTokens: 512,
     });
   }
@@ -154,9 +221,11 @@ async function tryInitTextEmbedder() {
   const mod = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@1.1.0/text_bundle.mjs");
   const { TextEmbedder, FilesetResolver } = mod;
   const fileset = await FilesetResolver.forTextTasks(TEXT_WASM_BASE);
-  setStatus({ loadProgress: "downloading EmbeddingGemma-300M (~184MB)…" });
+  const dl = await cacheFirstModelUrl(EMBED_MODEL_URL, (p) =>
+    setStatus({ loadProgress: progressText(p, "EmbeddingGemma-300M (~184MB)") }));
+  console.info(`[decision-engine] model source: ${dl.cached ? "cache" : "network"}`);
   const embedder = await TextEmbedder.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: EMBED_MODEL_URL },
+    baseOptions: { modelAssetPath: dl.assetPath },
   });
   // Warm-up: real embed calls. Throws if the model is corrupt.
   embedder.embed("warmup clear open road", { type: "SEMANTIC_SIMILARITY" });
@@ -248,6 +317,7 @@ if (typeof window !== "undefined") {
     evaluateChoiceText,
     isModelReady,
     getEngineStatus,
+    clearModelCache,
     payloadToChoiceQuestion,
     DECISION_MODEL_URL,
     EMBED_MODEL_URL,
