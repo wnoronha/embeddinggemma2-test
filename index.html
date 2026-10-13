@@ -3,30 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Decisions API — Autonomous Lane Choice Demo</title>
+  <title>SystemOne Racer — compare decision models</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <div class="page-wrapper">
-    <!-- Top Nav / Header -->
     <header class="navbar">
       <div class="nav-left">
-        <span class="badge">Decisions API Demo</span>
-        <span class="nav-title">Autonomous Vehicle Lane Selection</span>
+        <span class="badge">OpenRouter · Decisions</span>
+        <span class="nav-title">Lane decision race</span>
       </div>
       <div class="nav-right">
-        <a href="https://github.com/wnoronha" target="_blank" class="github-link">GitHub</a>
+        <button type="button" class="ghost-btn nav-settings" id="openSettingsBtn">Settings</button>
+        <a href="https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request" target="_blank" rel="noopener" class="github-link">API</a>
         <div class="status-indicator">
           <span class="status-dot loading" id="serverStatusDot"></span>
-          <span id="serverStatusText">Loading model…</span>
+          <span id="serverStatusText">Connect OpenRouter</span>
         </div>
       </div>
     </header>
 
-    <!-- Main Section: Clean Showcase matching OpenAI Developer Docs -->
     <main class="showcase-container">
-      <!-- Section Title & Tabs -->
       <div class="showcase-header">
         <div class="tab-group">
           <button class="tab-btn active" id="tabDriving">Race</button>
@@ -36,138 +34,136 @@
       </div>
 
       <section id="drivingView">
-      <h2 class="question-headline">System-One Racer — same road, three brains</h2>
-      <p class="playground-sub">One canonical obstacle set mirrored to all tracks. One shared state, fanned out in parallel via <code>Promise.allSettled</code> to Jev (OpenRouter or native) + OpenAI Decisions + local EmbeddingGemma. Keys stay in your browser (localStorage).</p>
-
-      <!-- Leaderboard -->
-      <div class="leaderboard" id="leaderboard"></div>
-
-      <!-- Global race controls -->
-      <div class="control-box race-controls">
-        <div class="control-title">Race control (mirrored to all 3 tracks):</div>
-        <div class="button-row">
-          <button class="action-btn" id="blockBtn1" onclick="raceSpawn(1)">Block Lane 1</button>
-          <button class="action-btn" id="blockBtn2" onclick="raceSpawn(2)">Block Lane 2</button>
-          <button class="action-btn" id="blockBtn3" onclick="raceSpawn(3)">Block Lane 3</button>
-        </div>
-        <div class="button-row">
-          <button class="action-btn secondary" onclick="raceRandom(1)">1 Random</button>
-          <button class="action-btn secondary" onclick="raceRandom(2)">2 Random</button>
-          <button class="action-btn secondary" onclick="raceClear()">Clear Road</button>
-          <button class="action-btn secondary active" id="autoBtn">Auto race: on</button>
-        </div>
-      </div>
-
-      <!-- Three tracks, each with its own 3 lanes -->
-      <div class="race-grid">
-        <div class="track-card" data-provider="local">
-          <div class="track-header"><span class="track-name">Local · EmbeddingGemma</span><span class="track-sub">on-device · no key</span></div>
-          <div class="road-viewport small"><canvas id="canvas-local" width="220" height="380"></canvas></div>
-          <div class="status-meta">
-            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="local-Current">Lane 2</span></div>
-            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="local-Decision">Loading…</span></div>
-            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="local-Latency">—</span></div>
-          </div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="local-Engine">loading model…</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Sims / probs</span><span class="meta-value small mono" id="local-Sims">pending</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="local-Debug">waiting…</span></div></div>
+        <div class="hero compact">
+          <h1 class="question-headline">Same road. Compare decision models.</h1>
+          <p class="hero-lead">One shared <code>state</code> per tick → <code>POST /api/alpha/decisions</code> in parallel. Aliased model IDs are hidden; only pinned builds are listed.</p>
         </div>
 
-        <div class="track-card" data-provider="jev">
-          <div class="track-header"><span class="track-name">Jev · SystemOne</span><span class="track-sub">via OpenRouter · CORS-clean</span></div>
-          <div class="road-viewport small"><canvas id="canvas-jev" width="220" height="380"></canvas></div>
-          <div class="key-row">
-            <select id="src-jev" class="field-input">
-              <option value="openrouter" selected>Jev via OpenRouter (no proxy needed)</option>
-              <option value="native">Jev native (TypeSafe API via proxy)</option>
-            </select>
-            <input type="password" id="key-jev" class="field-input" placeholder="OpenRouter API key (stored locally)" autocomplete="off" />
-            <input type="text" id="model-jev" class="field-input" value="typesafe/jev-router" spellcheck="false" />
+        <div class="settings-bar">
+          <div class="settings-bar-key">
+            <label class="field-label" for="key-openrouter">OpenRouter key</label>
+            <div class="key-row-inline">
+              <input type="password" id="key-openrouter" class="field-input" placeholder="sk-or-… (localStorage only)" autocomplete="off" />
+              <a class="text-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener">Get key</a>
+            </div>
           </div>
-          <div class="status-meta">
-            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="jev-Current">Lane 2</span></div>
-            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="jev-Decision">Set API key</span></div>
-            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="jev-Latency">—</span></div>
+          <div class="settings-bar-models">
+            <label class="field-label">Racing</label>
+            <button type="button" class="settings-models-btn" id="openModelsModalBtn">Choose models</button>
+            <div class="selected-model-pills" id="selectedModelPills"></div>
           </div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="jev-Engine">jev / awaiting key</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="jev-Sims">pending (native source only)</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="jev-Debug">waiting…</span></div></div>
         </div>
 
-        <div class="track-card" data-provider="openai">
-          <div class="track-header"><span class="track-name">OpenAI Decisions</span><span class="track-sub">v1/decisions · gpt-6-luna</span></div>
-          <div class="road-viewport small"><canvas id="canvas-openai" width="220" height="380"></canvas></div>
-          <div class="key-row">
-            <input type="password" id="key-openai" class="field-input" placeholder="OpenAI API key (stored locally)" autocomplete="off" />
-            <input type="text" id="model-openai" class="field-input" value="gpt-6-luna" spellcheck="false" />
-          </div>
-          <div class="status-meta">
-            <div class="meta-col"><span class="meta-label">Current</span><span class="meta-value" id="openai-Current">Lane 2</span></div>
-            <div class="meta-col"><span class="meta-label">Selected</span><span class="meta-value highlight" id="openai-Decision">Set API key</span></div>
-            <div class="meta-col"><span class="meta-label">Latency</span><span class="meta-value" id="openai-Latency">—</span></div>
-          </div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Engine</span><span class="meta-value small" id="openai-Engine">openai / awaiting key</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Probs + confidence</span><span class="meta-value small mono" id="openai-Sims">pending</span></div></div>
-          <div class="status-meta engine-meta"><div class="meta-col wide"><span class="meta-label">Debug</span><span class="meta-value small mono" id="openai-Debug">waiting…</span></div></div>
-        </div>
-      </div>
+        <div class="leaderboard" id="leaderboard"></div>
 
-      <!-- JSON Payload Card: the single shared SystemOne request, fanned out -->
-      <div class="code-showcase-card">
-        <div class="code-card-header">
-          <div class="code-title">
-            <span class="code-icon">⚡</span>
-            <span>Shared SystemOne request (one state → Jev + OpenAI + local, parallel)</span>
+        <div class="control-box race-controls">
+          <div class="control-title">Road (mirrored to every track)</div>
+          <div class="button-row">
+            <button class="action-btn" id="blockBtn1" onclick="raceSpawn(1)">Block lane 1</button>
+            <button class="action-btn" id="blockBtn2" onclick="raceSpawn(2)">Block lane 2</button>
+            <button class="action-btn" id="blockBtn3" onclick="raceSpawn(3)">Block lane 3</button>
           </div>
-          <button class="copy-btn" id="manualTriggerBtn">Re-evaluate all</button>
+          <div class="button-row">
+            <button class="action-btn secondary" onclick="raceRandom(1)">1 random block</button>
+            <button class="action-btn secondary" onclick="raceRandom(2)">2 random blocks</button>
+            <button class="action-btn secondary" onclick="raceClear()">Clear road</button>
+            <button class="action-btn secondary active" id="autoBtn">Auto waves: on</button>
+          </div>
         </div>
-        <pre class="code-content" id="jsonPayloadPreview"></pre>
-      </div>
-      <p class="model-note">
-        Fair race: one canonical obstacle set is mirrored to all three tracks, one
-        <code>state</code> is built, and the same question is sent to Jev
-        (OpenRouter <code>typesafe/jev-router</code> by default, or native
-        <code>v1/systemone</code> via proxy), OpenAI
-        <code>v1/decisions</code> (<code>gpt-6-luna</code>), and on-device MediaPipe
-        <code>DecisionMaker + EmbeddingGemma2-270M</code> in parallel via
-        <code>Promise.allSettled</code>. API keys are stored only in
-        <code>localStorage</code>. Each car steers only from its own provider's
-        answer; errors hold the lane. Until the local model loads it shows
-        <code>Waiting for model…</code>.
-      </p>
+
+        <div class="race-grid" id="raceGrid"></div>
+
+        <div class="code-showcase-card">
+          <div class="code-card-header">
+            <div class="code-title">
+              <span class="code-icon">⌁</span>
+              <span>Shared request (one state → all models)</span>
+            </div>
+            <button class="copy-btn" id="manualTriggerBtn">Re-evaluate all</button>
+          </div>
+          <pre class="code-content tall" id="jsonPayloadPreview"></pre>
+        </div>
       </section>
 
       <section id="playgroundView" hidden>
-        <h2 class="question-headline">Test any query against the model</h2>
-        <p class="playground-sub">Same engine as Driving — query + instructions + choices, winning label back. No probabilities, no fallback steering.</p>
+        <h2 class="question-headline">Single-shot Decisions call</h2>
+        <p class="playground-sub">Same API as the race. Key is read from the settings bar on Race.</p>
         <div class="playground-form">
-          <label class="field-label" for="pgQuery">Query</label>
-          <textarea id="pgQuery" class="field-input" rows="2">Completely clear with unobstructed open road</textarea>
+          <div class="pg-grid">
+            <div>
+              <label class="field-label" for="pgModel">Model</label>
+              <select id="pgModel" class="field-input"></select>
+            </div>
+            <div>
+              <label class="field-label" for="pgState">State (JSON)</label>
+              <textarea id="pgState" class="field-input mono" rows="6">{
+  "currentLane": 2,
+  "blockedLanes": [1],
+  "lanes": [
+    { "lane": 1, "status": "blocked" },
+    { "lane": 2, "status": "clear" },
+    { "lane": 3, "status": "clear" }
+  ]
+}</textarea>
+            </div>
+          </div>
 
           <label class="field-label" for="pgInstructions">Instructions</label>
           <textarea id="pgInstructions" class="field-input" rows="2">Identify the safest lane that is clear of roadblocks.</textarea>
 
-          <label class="field-label" for="pgChoices">Choices (one per line: <code>label | description</code>)</label>
-          <textarea id="pgChoices" class="field-input mono" rows="5">lane_1 | Lane 1 is blocked by a dangerous roadblock barrier
-lane_2 | Lane 2 is completely clear with unobstructed open road
-lane_3 | Lane 3 is completely clear with unobstructed open road</textarea>
+          <label class="field-label" for="pgCriteria">Choice criteria (JSON)</label>
+          <textarea id="pgCriteria" class="field-input mono" rows="4">{
+  "lane_1": "Lane 1 is blocked by a dangerous roadblock barrier",
+  "lane_2": "Lane 2 is completely clear with unobstructed open road",
+  "lane_3": "Lane 3 is completely clear with unobstructed open road"
+}</textarea>
 
           <div class="playground-actions">
-            <button class="action-btn pg-submit" id="pgSubmit">Submit</button>
+            <button class="action-btn pg-submit" id="pgSubmit">Run Decisions API</button>
             <span class="pg-status" id="pgStatus"></span>
           </div>
 
           <label class="field-label">Response</label>
-          <pre class="code-content pg-response" id="pgResponse">Hit Submit to run the model.</pre>
+          <pre class="code-content pg-response" id="pgResponse">Uses your OpenRouter key from the Race tab.</pre>
         </div>
       </section>
     </main>
   </div>
 
-  <script type="module" src="decision-engine.js?v=4"></script>
-  <script src="providers.js?v=4"></script>
-  <script src="game.js?v=4"></script>
-  <script src="race.js?v=4"></script>
-  <script src="playground.js?v=4"></script>
+  <div class="modal-backdrop" id="modelsModal" hidden role="dialog" aria-modal="true" aria-labelledby="modelsModalTitle">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="modelsModalTitle">Decision models</h2>
+          <p class="modal-sub" id="modalCatalogMeta">Loading catalog…</p>
+        </div>
+        <button type="button" class="modal-close" id="modalCloseBtn" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal-toolbar">
+        <input type="search" id="modelModalSearch" class="field-input modal-search" placeholder="Search vendor or model…" autocomplete="off" />
+        <button type="button" class="ghost-btn" id="modalRefreshBtn">Refresh</button>
+        <button type="button" class="ghost-btn" id="modalSelectFreeBtn">+ All free</button>
+        <button type="button" class="ghost-btn" id="modalClearBtn">Clear</button>
+      </div>
+
+      <div class="modal-list" id="modelModalList"></div>
+
+      <div class="modal-footer">
+        <span class="modal-footnote">Free models highlighted · Aliases (<code>~vendor/…</code>) excluded</span>
+        <div class="modal-footer-actions">
+          <button type="button" class="ghost-btn" id="modalCancelBtn">Cancel</button>
+          <button type="button" class="action-btn modal-apply" id="modalApplyBtn">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <span id="selectedModelCount" hidden aria-hidden="true">0</span>
+
+  <script src="providers.js?v=7"></script>
+  <script src="game.js?v=7"></script>
+  <script src="race.js?v=7"></script>
+  <script src="playground.js?v=7"></script>
 </body>
 </html>

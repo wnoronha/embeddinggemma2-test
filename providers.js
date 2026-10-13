@@ -322,12 +322,204 @@
     };
   }
 
+  var OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+  var OPENROUTER_DECISIONS = "https://openrouter.ai/api/alpha/decisions";
+  var OPENROUTER_SYSTEMONE = OPENROUTER_BASE + "/systemone";
+
+  function openrouterHeaders(opts) {
+    var referer = "https://wnoronha.github.io/systemone-racer/";
+    try {
+      if (typeof location !== "undefined" && location.origin && location.origin !== "null") {
+        referer = location.origin + "/";
+      }
+    } catch (e) { /* non-browser */ }
+    var headers = {
+      "Authorization": "Bearer " + (opts.apiKey || "").trim(),
+      "Content-Type": "application/json",
+      "HTTP-Referer": referer,
+      "X-Title": "SystemOne Racer",
+    };
+    if (opts.extraHeaders) {
+      for (var k in opts.extraHeaders) {
+        if (Object.prototype.hasOwnProperty.call(opts.extraHeaders, k)) headers[k] = opts.extraHeaders[k];
+      }
+    }
+    return headers;
+  }
+
+  // --- OpenRouter System One API (Jev 1.13, jev-latest, …) ---
+  // POST https://openrouter.ai/api/v1/systemone — same shape as TypeSafe native.
+  async function openrouterSystemOneDecide(laneState, opts) {
+    opts = opts || {};
+    var apiKey = (opts.apiKey || "").trim();
+    if (!apiKey) throw new Error("missing OpenRouter API key");
+    var model = (opts.model || "typesafe/jev-1.13").trim() || "typesafe/jev-1.13";
+    var t0 = performance.now();
+    var res = await fetch(OPENROUTER_SYSTEMONE, {
+      method: "POST",
+      headers: openrouterHeaders(opts),
+      body: JSON.stringify({
+        state: laneState.stateObj,
+        model: model,
+        questions: {
+          lane_choice: {
+            type: "choice",
+            instructions: laneState.instructions,
+            criteria: laneState.criteria,
+          },
+        },
+      }),
+      signal: opts.signal || null,
+    });
+    var latencyMs = Math.round(performance.now() - t0);
+    if (!res.ok) {
+      var text = "";
+      try { text = await res.text(); } catch (e) { /* ignore */ }
+      throw new Error("openrouter systemone http " + res.status + (text ? ": " + text.slice(0, 200) : ""));
+    }
+    var json = await res.json();
+    var ans = json && json.answers && json.answers.lane_choice;
+    if (!ans || typeof ans.choice !== "string") throw new Error("openrouter systemone: malformed answer");
+    var chosen = parseLaneKey(ans.choice);
+    if (!chosen) throw new Error("openrouter systemone: unparsable choice " + ans.choice);
+    return {
+      chosen: chosen,
+      selected: ans.choice,
+      probabilities: ans.probabilities || null,
+      confidence: typeof ans.confidence === "number" ? ans.confidence : null,
+      latencyMs: latencyMs,
+      engine: "openrouter-systemone/" + (json.model || model),
+      raw: json,
+    };
+  }
+
+  // Fallback when the decisions catalog fetch fails (offline / CORS).
+  var DECISIONS_CATALOG_FALLBACK = [
+    { id: "typesafe/jev-1.13", label: "Jev 1.13", vendor: "typesafe", surface: "decisions", isFree: false, blurb: "TypeSafe System One" },
+    { id: "openai/gpt-6-luna-decisions", label: "GPT-6 Luna Decisions", vendor: "openai", surface: "decisions", isFree: false, blurb: "OpenAI Decisions on Luna" },
+    { id: "microsoft/microsoft-decision-1", label: "Microsoft-Decision-1", vendor: "microsoft", surface: "decisions", isFree: false, blurb: "Microsoft decision model" },
+  ];
+
+  function isAliasModelId(id) {
+    return String(id || "").charAt(0) === "~";
+  }
+
+  function isFreePricing(pricing, id) {
+    if (String(id || "").indexOf(":free") !== -1) return true;
+    if (!pricing) return false;
+    var p = parseFloat(pricing.prompt);
+    var c = parseFloat(pricing.completion);
+    return p === 0 && (c === 0 || isNaN(c));
+  }
+
+  function catalogEntryFromApi(m) {
+    var id = m && m.id;
+    if (!id || isAliasModelId(id)) return null;
+    var vendor = id.indexOf("/") !== -1 ? id.split("/")[0] : "other";
+    var name = (m.name || id).replace(/^[^:]+:\s*/i, "").trim() || id;
+    var pricing = m.pricing || {};
+    return {
+      id: id,
+      label: name,
+      vendor: vendor,
+      surface: "decisions",
+      isFree: isFreePricing(pricing, id),
+      blurb: ((m.description || "").slice(0, 100) || "OpenRouter decision model").replace(/\s+/g, " "),
+      contextLength: m.context_length,
+      pricePrompt: pricing.prompt,
+    };
+  }
+
+  async function fetchOpenRouterDecisionModels(apiKey) {
+    var headers = { "Content-Type": "application/json" };
+    if (apiKey) headers.Authorization = "Bearer " + apiKey.trim();
+    var res = await fetch(OPENROUTER_BASE + "/models?output_modalities=decisions", { headers: headers });
+    if (!res.ok) return DECISIONS_CATALOG_FALLBACK.slice();
+    var json = await res.json();
+    var list = (json.data || []).map(catalogEntryFromApi).filter(Boolean);
+    if (!list.length) return DECISIONS_CATALOG_FALLBACK.slice();
+    list.sort(function (a, b) {
+      if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
+      if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
+      return a.label.localeCompare(b.label);
+    });
+    return list;
+  }
+
+  // --- OpenRouter Decisions API (all decision models on OpenRouter) ---
+  // POST https://openrouter.ai/api/alpha/decisions
+  async function openrouterDecisionsDecide(laneState, opts) {
+    opts = opts || {};
+    var apiKey = (opts.apiKey || "").trim();
+    if (!apiKey) throw new Error("missing OpenRouter API key");
+    var model = (opts.model || "typesafe/jev-1.13").trim() || "typesafe/jev-1.13";
+    var t0 = performance.now();
+    var res = await fetch(OPENROUTER_DECISIONS, {
+      method: "POST",
+      headers: openrouterHeaders(opts),
+      body: JSON.stringify({
+        model: model,
+        state: laneState.stateObj,
+        questions: {
+          lane_choice: {
+            type: "choice",
+            instructions: laneState.instructions,
+            criteria: laneState.criteria,
+          },
+        },
+      }),
+      signal: opts.signal || null,
+    });
+    var latencyMs = Math.round(performance.now() - t0);
+    if (!res.ok) {
+      var text = "";
+      try { text = await res.text(); } catch (e) { /* ignore */ }
+      throw new Error("openrouter decisions http " + res.status + (text ? ": " + text.slice(0, 200) : ""));
+    }
+    var json = await res.json();
+    var ans = json && json.answers && json.answers.lane_choice;
+    if (!ans) throw new Error("openrouter decisions: missing lane_choice answer");
+    if (ans.type && ans.type !== "choice") {
+      throw new Error("openrouter decisions: expected choice, got " + ans.type);
+    }
+    var choiceKey = ans.choice;
+    if (typeof choiceKey !== "string") throw new Error("openrouter decisions: malformed choice");
+    var chosen = parseLaneKey(choiceKey);
+    if (!chosen) throw new Error("openrouter decisions: unparsable choice " + choiceKey);
+    var probabilities = ans.probabilities || null;
+    if (Array.isArray(probabilities)) {
+      var map = {};
+      probabilities.forEach(function (p) {
+        if (p && typeof p.value === "string") map[p.value] = p.probability;
+      });
+      probabilities = map;
+    }
+    return {
+      chosen: chosen,
+      selected: choiceKey,
+      probabilities: probabilities,
+      confidence: typeof ans.confidence === "number" ? ans.confidence : null,
+      latencyMs: latencyMs,
+      engine: "openrouter-decisions/" + (json.model || model),
+      raw: json,
+    };
+  }
+
+  function decideForOpenRouterModel(laneState, opts) {
+    return openrouterDecisionsDecide(laneState, opts);
+  }
+
+  // Back-compat alias for older race code.
+  var SYSTEMONE_CATALOG = DECISIONS_CATALOG_FALLBACK;
+  async function fetchOpenRouterTypeSafeModels(apiKey) {
+    return fetchOpenRouterDecisionModels(apiKey);
+  }
+
   // --- OpenRouter (Jev Router as a chat model) ---
   // No CORS issues: api.openrouter.ai answers preflights with HTTP 204 +
   // Access-Control-Allow-Origin: *. `typesafe/jev-router` runs on Jev under
   // the hood but speaks chat-completions, so the lane is coerced via
   // json_schema (no calibrated probabilities — same shape as genericDecide).
-  var OPENROUTER_BASE = "https://openrouter.ai/api/v1";
   function openrouterDecide(laneState, opts) {
     opts = opts || {};
     var referer = "https://wnoronha.github.io/systemone-racer/";
@@ -352,6 +544,10 @@
     JEV_PUBLIC_PROXY: JEV_PUBLIC_PROXY,
     OPENAI_DEFAULT_BASE: OPENAI_DEFAULT_BASE,
     OPENROUTER_BASE: OPENROUTER_BASE,
+    OPENROUTER_DECISIONS: OPENROUTER_DECISIONS,
+    OPENROUTER_SYSTEMONE: OPENROUTER_SYSTEMONE,
+    DECISIONS_CATALOG_FALLBACK: DECISIONS_CATALOG_FALLBACK,
+    SYSTEMONE_CATALOG: SYSTEMONE_CATALOG,
     INSTRUCTIONS: INSTRUCTIONS,
     parseLaneKey: parseLaneKey,
     buildLaneState: buildLaneState,
@@ -360,5 +556,11 @@
     openaiDecide: openaiDecide,
     genericDecide: genericDecide,
     openrouterDecide: openrouterDecide,
+    openrouterSystemOneDecide: openrouterSystemOneDecide,
+    openrouterDecisionsDecide: openrouterDecisionsDecide,
+    decideForOpenRouterModel: decideForOpenRouterModel,
+    fetchOpenRouterDecisionModels: fetchOpenRouterDecisionModels,
+    fetchOpenRouterTypeSafeModels: fetchOpenRouterTypeSafeModels,
+    isAliasModelId: isAliasModelId,
   };
 })();

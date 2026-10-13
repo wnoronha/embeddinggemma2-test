@@ -79,6 +79,7 @@ class CarGame {
     this.listenForEngine();
 
     // Start loop
+    this._destroyed = false;
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
   }
@@ -676,7 +677,12 @@ class CarGame {
     ctx.restore();
   }
 
+  destroy() {
+    this._destroyed = true;
+  }
+
   animate() {
+    if (this._destroyed) return;
     this.updatePhysics();
     this.draw();
     requestAnimationFrame(this.animate);
